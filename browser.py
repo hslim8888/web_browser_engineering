@@ -325,8 +325,3 @@ url = "http://example.org:8080/index.html"
 if __name__ == "__main__":
     Browser().load('https://browser.engineering/html.html')
     tkinter.mainloop()
-    # Browser().load(sys.argv[1])
-    # tkinter.mainloop()
-    # headers, body = request('https://browser.engineering/html.html')
-    # nodes = HTMLParser(body).parse()
-    # print_tree(nodes)
