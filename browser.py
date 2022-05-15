@@ -44,13 +44,8 @@ class Browser:
 
     def load(self, url):
         headers, body = request(url)
-        # show(body)
-        self.canvas.create_rectangle(10, 20, 400, 300)
-        self.canvas.create_oval(100, 100, 150, 150)
-        self.canvas.create_text(200, 150, text="Hi!")
-
-        tokens = lex(body)
-        self.display_list = Layout(tokens).display_list
+        self.nodes = HTMLParser(body).parse()
+        self.display_list = Layout(self.nodes).display_list
         self.draw()
 
 
@@ -130,7 +125,7 @@ class HTMLParser:
     def parse(self):
         text = ""
         inside_tag = False
-        for c in body:
+        for c in self.body:
             if c == "<":
                 inside_tag = True
                 if text: self.add_text(text)
@@ -206,7 +201,7 @@ def print_tree(node, indent=0):
 
 
 class Layout:
-    def __init__(self, tokens):
+    def __init__(self, nodes):
         self.cursor_x = HSTEP
         self.cursor_y = VSTEP
         self.weight = "normal"
@@ -215,8 +210,10 @@ class Layout:
         self.line = []
         self.display_list = []
 
-        for tok in tokens:
-            self.token(tok)
+        # for tok in tokens:
+        #     self.token(tok)
+        for tree in nodes.children:
+            self.recurse(tree)
         self.flush()
 
     def text(self, tok):  # tok must be a Text token
@@ -254,32 +251,39 @@ class Layout:
         max_descent = max([metric["descent"] for metric in metrics])
         self.cursor_y = baseline + 1.25 * max_descent
 
-    def token(self, tok):
-        if isinstance(tok, Text):
-            self.text(tok)
+    def open_tag(self, tag):
+        if tag == "i":
+            self.style = "italic"
+        elif tag == "b":
+            self.weight = "bold"
+        elif tag == "small":
+            self.size -= 2
+        elif tag == "big":
+            self.size += 4
+        elif tag == "br":
+            self.flush()
+
+    def close_tag(self, tag):
+        if tag == "i":
+            self.style = "roman"
+        elif tag == "b":
+            self.weight = "normal"
+        elif tag == "small":
+            self.size += 2
+        elif tag == "big":
+            self.size -= 4
+        elif tag == "p":
+            self.flush()
+            self.cursor_y += VSTEP
+
+    def recurse(self, tree):
+        if isinstance(tree, Text):
+            self.text(tree)
         else:
-            assert isinstance(tok, Tag)
-            if tok.tag == "i":
-                self.style = "italic"
-            elif tok.tag == "/i":
-                self.style = "roman"
-            elif tok.tag == "b":
-                self.weight = "bold"
-            elif tok.tag == "/b":
-                self.weight = "normal"
-            elif tok.tag == "small":
-                self.size -= 2
-            elif tok.tag == "/small":
-                self.size += 2
-            elif tok.tag == "big":
-                self.size += 4
-            elif tok.tag == "/big":
-                self.size -= 4
-            elif tok.tag == "br":
-                self.flush()
-            elif tok.tag == "/p":
-                self.flush()
-                self.cursor_y += VSTEP
+            self.open_tag(tree.tag)
+            for child in tree.children:
+                self.recurse(child)
+            self.close_tag(tree.tag)
 
 
 
@@ -288,8 +292,10 @@ url = "http://example.org:8080/index.html"
 # https://www.zggdwx.com/xiyou/1.html
 
 if __name__ == "__main__":
+    Browser().load('https://browser.engineering/html.html')
+    tkinter.mainloop()
     # Browser().load(sys.argv[1])
     # tkinter.mainloop()
-    headers, body = request('https://browser.engineering/html.html')
-    nodes = HTMLParser(body).parse()
-    print_tree(nodes)
+    # headers, body = request('https://browser.engineering/html.html')
+    # nodes = HTMLParser(body).parse()
+    # print_tree(nodes)
