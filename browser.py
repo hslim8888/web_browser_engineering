@@ -9,6 +9,10 @@ import sys
 WIDTH, HEIGHT = 800, 600
 HSTEP, VSTEP = 13, 18
 SCROLL_STEP = 100
+SELF_CLOSING_TAGS = [
+    "area", "base", "br", "col", "embed", "hr", "img", "input",
+    "link", "meta", "param", "source", "track", "wbr",
+]
 
 
 class Browser:
@@ -97,38 +101,108 @@ def request(url):
 # a token is either Text or Tag
 @dataclasses.dataclass
 class Text:
-    text: str
+    def __init__(self, text, parent):
+        self.text = text
+        self.children = []
+        self.parent = parent
+
+    def __repr__(self):
+        return repr(self.text)
 
 
 @dataclasses.dataclass
-class Tag:
-    tag: str
+class Element:
+    def __init__(self, tag, attributes, parent):
+        self.tag = tag
+        self.attributes = attributes
+        self.children = []
+        self.parent = parent
+
+    def __repr__(self):
+        return "<" + self.tag + ">"
 
 
-# lex("<b>Hello</b> <i>world!</i>")
-# desired output: [Tag("b"), Text("Hello"), Tag("/b"), Text(" "),
-#                  Tag("i"), Text("world!"), Tag("/i")]
+class HTMLParser:
+    def __init__(self, body):
+        self.body = body
+        self.unfinished = []
 
-def lex(body):  # return a list of tokens
-    tokens = []
-    text = ""
-    inside_tag = False
-    for c in body:
-        if c == "<":
-            inside_tag = True
-            if text != "":
-                tokens.append(Text(text))
-            text = ""
-        elif c == ">":
-            inside_tag = False
-            tokens.append(Tag(text))
-            text = ""
-        else:
-            text += c
-    if not inside_tag and text != "":
-        tokens.append(Text(text))
+    def parse(self):
+        text = ""
+        inside_tag = False
+        for c in body:
+            if c == "<":
+                inside_tag = True
+                if text: self.add_text(text)
+                text = ""
+            elif c == ">":
+                inside_tag = False
+                self.add_tag(text)
+                text = ""
+            else:
+                text += c
+        if not inside_tag and text:
+            self.add_text(text)
+        return self.finish()
 
-    return tokens
+    def add_text(self, text):
+        # tag에서 !doctype 버리기로 해서 다음 줄에 바로 \n 나옴...크러쉬 남.
+        # 일단 공백은 무시하는 걸로...
+        if text.isspace(): return
+        parent = self.unfinished[-1] # 가장 마지막 unfinished 가 새로운 text의 부모
+        node = Text(text, parent)
+        parent.children.append(node)  # 각 parent 가 Text class.
+
+    def add_tag(self, tag):
+        # tag 에서 attributes 벗겨내기
+        tag, attributes = self.get_attributes(tag)
+        if tag.startswith("!"): return  # <!doctype html> 은 태그가 아님...일단 여기선 그냥 버리기로.
+
+        if tag.startswith("/"):  # close tag
+            if len(self.unfinished) == 1: return  # 마지막 태그
+            node = self.unfinished.pop()  # latest를 pop??
+            parent = self.unfinished[-1]
+            parent.children.append(node)  # tag closed 된 것만 child가 될 수 있음.
+
+        elif tag in SELF_CLOSING_TAGS:  # attribute 처리해야함.
+            parent = self.unfinished[-1]
+            node = Element(tag, parent, attributes)
+            parent.children.append(node)
+
+        else: # open tag
+            parent = self.unfinished[-1] if self.unfinished else None # 제일 처음과 마지막은 parent 없음.
+            node = Element(tag, parent, attributes)
+            self.unfinished.append(node)
+
+    def get_attributes(self, text):
+        parts = text.split()
+        tag = parts[0].lower()
+        attributes = {}
+        for attrpair in parts[1:]:
+            if "=" in attrpair:
+                key, value = attrpair.split("=", 1)
+                # value 가 "" 혹은 ''에 감싸져 있는 경우 벗겨내기
+                if len(value) > 2 and value[0] in ["'", "\""]:
+                    value = value[1:-1]
+                attributes[key.lower()] = value
+            else:  # value 가 누락된(omit) 경우도 있음. ex) <input disabled>
+                attributes[attrpair.lower()] = ""
+        return tag, attributes
+
+    def finish(self):
+        if len(self.unfinished) == 0:
+            self.add_tag("html")
+        while len(self.unfinished) > 1:
+            node = self.unfinished.pop()
+            parent = self.unfinished[-1]
+            parent.children.append(node)
+        return self.unfinished.pop()
+
+
+def print_tree(node, indent=0):
+    print(" " * indent, node)
+    for child in node.children:
+        print_tree(child, indent + 2)
 
 
 class Layout:
@@ -214,5 +288,8 @@ url = "http://example.org:8080/index.html"
 # https://www.zggdwx.com/xiyou/1.html
 
 if __name__ == "__main__":
-    Browser().load(sys.argv[1])
-    tkinter.mainloop()
+    # Browser().load(sys.argv[1])
+    # tkinter.mainloop()
+    headers, body = request('https://browser.engineering/html.html')
+    nodes = HTMLParser(body).parse()
+    print_tree(nodes)
