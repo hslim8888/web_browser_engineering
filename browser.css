@@ -1,0 +1,14 @@
+pre { background-color: gray; }
+a { color: blue; }
+i { font-style: italic; }
+b { font-weight: bold; }
+small { font-size: 90%; }
+big { font-size: 110%; }
+
+div div p { background-color: green; }
+
+div p { background-color: lightgreen; }
+
+foo { background-color: lightblue; }
+
+h1 { font-size: 400%; color: red; }
