@@ -377,20 +377,16 @@ class InlineLayout:
             self.y = self.previous.y + self.previous.height
 
         self.cursor_x = self.x
-        self.cursor_y = self.y
-        self.weight = "normal"
-        self.style = "roman"
-        self.size = 16
-        self.line = []
-        self.display_list = []
-
+        # ch 7 - new_line 도입하면서 cursor_y는 따로 안 씀...display_list도 사라짐.
+        self.new_line()  # self.cursor_y = self.y
         self.recurse(self.node)
-        self.flush()
+        # 이 시점에 layout tree 가 생성됨. but 계산은 아직 완료된 게 아님.
+        for line in self.children:
+            line.layout()
+        self.height = sum(line.height for line in self.children)
 
-        self.height = self.cursor_y - self.y
-
-    def text(self, tok):  # tok must be a Text token
-        for word in tok.text.split():
+    def text(self, node):  # node must be a Text token
+        for word in node.text.split():
             font = tkinter.font.Font(
                     family="Times",
                     size=self.size,
@@ -400,29 +396,42 @@ class InlineLayout:
             w = font.measure(word)
 
             if self.cursor_x + w >= WIDTH - HSTEP:
-                self.flush()
+                # ch 7 - 이제는 flush 할 필요 없이, LineLayout을 새로 만들면 됨.
+                # self.flush()
+                self.new_line()
 
-            self.line.append((self.cursor_x, word, font))
+            # ch 7. 현재 라인 제일 끝에 children array가 붙어야 함
+            line = self.children[-1]
+            text = TextLayout(node, word, line, self.previous_word)
+            line.children.append(text)
+            self.previous_word = text
+            # self.line.append((self.cursor_x, word, font))
             self.cursor_x += w + font.measure(" ")
 
-    # move the stuff in self.line to self.display_list
-    def flush(self):
-        if len(self.line) == 0:
-            return
-
-        # self.cursor_y += font.metrics("linespace") * 1.25
-        metrics = [font.metrics() for x, word, font in self.line]
-        max_ascent = max([metric["ascent"] for metric in metrics])
-        baseline = self.cursor_y + 1.25 * max_ascent
-
-        for x, word, font in self.line:
-            y = baseline - font.metrics("ascent")
-            self.display_list.append((x, y, word, font))
-
+    def new_list(self):
+        self.previous_word = None
         self.cursor_x = self.x
-        self.line = []
-        max_descent = max([metric["descent"] for metric in metrics])
-        self.cursor_y = baseline + 1.25 * max_descent
+        last_line = self.children[-1] if self.children else None
+        new_line = LineLayout(self.node, self, last_line)   # self 는 parent
+        self.children.append(new_line)
+    # move the stuff in self.line to self.display_list
+    # def flush(self):
+    #     if len(self.line) == 0:
+    #         return
+    #
+    #     # self.cursor_y += font.metrics("linespace") * 1.25
+    #     metrics = [font.metrics() for x, word, font in self.line]
+    #     max_ascent = max([metric["ascent"] for metric in metrics])
+    #     baseline = self.cursor_y + 1.25 * max_ascent
+    #
+    #     for x, word, font in self.line:
+    #         y = baseline - font.metrics("ascent")
+    #         self.display_list.append((x, y, word, font))
+    #
+    #     self.cursor_x = self.x
+    #     self.line = []
+    #     max_descent = max([metric["descent"] for metric in metrics])
+    #     self.cursor_y = baseline + 1.25 * max_descent
 
     def open_tag(self, tag):
         if tag == "i":
@@ -457,8 +466,11 @@ class InlineLayout:
         #     rect = DrawRect(self.x, self.y, x2, y2, "gray")
         #     display_list.append(rect)
 
-        for x, y, word, font in self.display_list:
-            display_list.append(DrawText(x, y, word, font))
+        # ch 7에서 self.display_list 사라짐
+        # for x, y, word, font in self.display_list:
+        #     display_list.append(DrawText(x, y, word, font))
+        for child in self.children:
+            child.paint(display_list)
 
 
 class CSSParser:
@@ -611,8 +623,6 @@ def style(node, rules):
         style(child)
 
 
-
-
 class TagSelector:
     def __init__(self, tag):
         self.tag = tag
@@ -634,6 +644,42 @@ class DescendantSelector:
             if self.ancestor.matches(node.parent): return True
             node = node.parent
         return False
+
+
+# ch 7. - 텍스트에 링크 더하기
+"""  이런 식으로 만들기
+DocumentLayout
+  BlockLayout (html element)
+    InlineLayout (body element)
+      LineLayout (first line of text)
+        TextLayout ("Here")
+        TextLayout ("is")
+        TextLayout ("some")
+        TextLayout ("text")
+        TextLayout ("that")
+        TextLayout ("is")
+      LineLayout (second line of text)
+        TextLayout ("spread")
+        TextLayout ("across")
+        TextLayout ("multiple")
+        TextLayout ("lines")
+"""
+class LineLayout:
+    def __init__(self, node, parent, previous):
+        self.node = node
+        self.parent = parent
+        self.previous = previous
+        self.children = []
+
+
+class TextLayout:
+    # 위에서 보면 알겠지만, 단어 단위.
+    def __init__(self, node, word, parent, previous):
+        self.node = node
+        self.word = word
+        self.parent = parent
+        self.previous = previous
+        self.children = []
 
 
 def tree_to_list(tree, list):
